@@ -1,0 +1,10 @@
+# JetBrains project files
+.idea
+
+# Composer
+vendor
+
+# Other
+.DS_Store
+**.cache
+
