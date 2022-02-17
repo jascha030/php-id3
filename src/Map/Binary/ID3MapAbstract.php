@@ -24,4 +24,15 @@ abstract class ID3MapAbstract implements ID3MapInterface
     {
         return strlen(reset($this->ids));
     }
+
+    final protected function generator(string $data): \Generator
+    {
+        for ($a = 0, $max = strlen($data); $a < $max; ++$a) {
+            $char = $data[$a];
+
+            if ($char >= " " && $char <= "~") {
+                yield $char;
+            }
+        }
+    }
 }
