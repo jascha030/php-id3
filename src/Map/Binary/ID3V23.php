@@ -28,6 +28,20 @@ final class ID3V23 extends ID3MapAbstract
 
     public function processTag(string $tag, string $tagId): string
     {
-        // todo: implement
+        $tmp = '';
+
+        $position = strpos($tag, $tagId . chr(0));
+        $length   = hexdec(bin2hex(substr($tag, ($position + 5), 3)));
+        $data     = substr($tag, $position, 9 + $length);
+
+        for ($a = 0, $max = strlen($data); $a < $max; ++$a) {
+            $char = $data[$a];
+
+            if ($char >= " " && $char <= "~") {
+                $tmp .= $char;
+            }
+        }
+
+        return $tmp;
     }
 }
