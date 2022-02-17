@@ -1,103 +1,116 @@
 <?php
 
-declare(strict_types=1);
-
 namespace Jascha030\Id3\Reader;
+
+use Jascha030\Id3\Map\Binary\ID3MapInterface;
+use Jascha030\Id3\Map\Binary\ID3V22;
+use Jascha030\Id3\Map\Binary\ID3V23;
+use JetBrains\PhpStorm\Pure;
 
 class Reader
 {
-    private const ID3_V22 = ["TT2", "TAL", "TP1", "TRK", "TYE", "TLE", "ULT"];
+    /**
+     * @var ID3MapInterface[]
+     */
+    private array $maps;
 
-    private const ID3_V23 = ["TIT2", "TALB", "TPE1", "TRCK", "TDRC", "TLEN", "USLT"];
-
-    public function __invoke(string $filePath)
+    private function __construct(array $defaultMaps = [new ID3V22(), new ID3V23()])
     {
-        $fsize = filesize($filePath);
-        $fd    = fopen($filePath, 'rb');
-        $tag   = fread($fd, $fsize);
-        $tmp = "";
-        fclose($fd);
+        $this->maps = [];
 
-        if (substr($tag, 0, 3) == "ID3") {
-            $result['FileName'] = $filePath;
-            $result['TAG']      = substr($tag, 0, 3);
-            $result['Version']  = hexdec(bin2hex(substr($tag, 3, 1))) . "." . hexdec(bin2hex(substr($tag, 4, 1)));
+        foreach ($defaultMaps as $map) {
+            $this->addVersionMap($map);
+        }
+    }
+
+    public function addVersionMap(ID3MapInterface $map): void
+    {
+        $this->maps[] = $map;
+    }
+
+    public function __invoke(string $filePath): ?array
+    {
+        $stream = fopen($filePath, 'rb');
+        $tag    = fread($stream, filesize($filePath));
+        $tmp    = "";
+
+        fclose($stream);
+        $result = [];
+
+        if (! str_starts_with($tag, "ID3")) {
+            return null;
         }
 
-        if ($result['Version'] == "4.0" || $result['Version'] == "3.0") {
-            for ($i = 0; $i < count(self::ID3_V23); $i++) {
-                if (strpos($tag, self::ID3_V23[$i] . chr(0)) != false) {
-                    $pos  = strpos($tag, self::ID3_V23[$i] . chr(0));
-                    $len  = hexdec(bin2hex(substr($tag, ($pos + 5), 3)));
-                    $data = substr($tag, $pos, 9 + $len);
-                    for ($a = 0; $a < strlen($data); $a++) {
-                        $char = substr($data, $a, 1);
-                        if ($char >= " " && $char <= "~") {
-                            $tmp .= $char;
-                        }
-                    }
-                    if (substr($tmp, 0, 4) == "TIT2") {
-                        $result['Title'] = substr($tmp, 4);
-                    }
-                    if (substr($tmp, 0, 4) == "TALB") {
-                        $result['Album'] = substr($tmp, 4);
-                    }
-                    if (substr($tmp, 0, 4) == "TPE1") {
-                        $result['Author'] = substr($tmp, 4);
-                    }
-                    if (substr($tmp, 0, 4) == "TRCK") {
-                        $result['Track'] = substr($tmp, 4);
-                    }
-                    if (substr($tmp, 0, 4) == "TDRC") {
-                        $result['Year'] = substr($tmp, 4);
-                    }
-                    if (substr($tmp, 0, 4) == "TLEN") {
-                        $result['Lenght'] = substr($tmp, 4);
-                    }
-                    if (substr($tmp, 0, 4) == "USLT") {
-                        $result['Lyric'] = substr($tmp, 7);
-                    }
-                    $tmp = "";
+        $result['FileName'] = $filePath;
+        $result['TAG']      = substr($tag, 0, 3);
+        $version            = sprintf("%s.%s", hexdec(bin2hex($tag[3])), hexdec(bin2hex($tag[4])));
+
+        foreach ($this->maps as $map) {
+            if (! $map->applicable($version)) {
+                continue;
+            }
+
+            foreach ($map->getIds() as $tagId) {
+                if (! str_contains($tag, $tagId . chr(0))) {
+                    continue;
                 }
+
+                $position = strpos($tag, $tagId . chr(0));
+                $length   = hexdec(bin2hex(substr($tag, ($position + 5), 3)));
+                $data     = substr($tag, $position, 9 + $length);
+
+                for ($a = 0, $max = strlen($data); $a < $max; ++$a) {
+                    $char = $data[$a];
+
+                    if ($char >= " " && $char <= "~") {
+                        $tmp .= $char;
+                    }
+                }
+
+                $tagTypeId = substr($tmp, $map->getOffset());
+                $key       = array_flip($map->getIds())[$tagTypeId] ?? null;
+
+                if (null !== $key) {
+                    $offset       = $key === 'Lyric' ? $map->getOffset() + 3 : $map->getOffset();
+                    $result[$key] = str_replace(substr($tmp, $offset), '', $tmp);
+                }
+
+                $tmp = "";
             }
         }
-        if ($result['Version'] == "2.0") {
-            for ($i = 0; $i < count(self::ID3_V22); $i++) {
-                if (strpos($tag, self::ID3_V22[$i] . chr(0)) != false) {
-                    $pos  = strpos($tag, self::ID3_V22[$i] . chr(0));
-                    $len  = hexdec(bin2hex(substr($tag, ($pos + 3), 3)));
-                    $data = substr($tag, $pos, 6 + $len);
-                    for ($a = 0; $a < strlen($data); $a++) {
-                        $char = substr($data, $a, 1);
-                        if ($char >= " " && $char <= "~") {
-                            $tmp .= $char;
-                        }
-                    }
-                    if (substr($tmp, 0, 3) == "TT2") {
-                        $result['Title'] = substr($tmp, 3);
-                    }
-                    if (substr($tmp, 0, 3) == "TAL") {
-                        $result['Album'] = substr($tmp, 3);
-                    }
-                    if (substr($tmp, 0, 3) == "TP1") {
-                        $result['Author'] = substr($tmp, 3);
-                    }
-                    if (substr($tmp, 0, 3) == "TRK") {
-                        $result['Track'] = substr($tmp, 3);
-                    }
-                    if (substr($tmp, 0, 3) == "TYE") {
-                        $result['Year'] = substr($tmp, 3);
-                    }
-                    if (substr($tmp, 0, 3) == "TLE") {
-                        $result['Lenght'] = substr($tmp, 3);
-                    }
-                    if (substr($tmp, 0, 3) == "ULT") {
-                        $result['Lyric'] = substr($tmp, 6);
-                    }
-                    $tmp = "";
-                }
-            }
-        }
+
+//        if ($version === "2.0") {
+//            foreach (self::ID3_V22 as $tagId) {
+//                if (! str_contains($tag, $tagId . chr(0))) {
+//                    continue;
+//                }
+//
+//                $position = strpos($tag, $tagId . chr(0));
+//                $length   = hexdec(bin2hex(substr($tag, ($position + 3), 3)));
+//                $data     = substr($tag, $position, 6 + $length);
+//
+//                for ($a = 0, $aMax = strlen($data); $a < $aMax; $a++) {
+//                    $char = $data[$a];
+//
+//                    if ($char >= " " && $char <= "~") {
+//                        $tmp .= $char;
+//                    }
+//                }
+//
+//                $tagTypeId = substr($tmp, 3);
+//                $key       = array_flip(self::ID3_V22)[$tagTypeId] ?? null;
+//
+//                if (null !== $key) {
+//                    $offset       = $key === 'Lyric'
+//                        ? 6
+//                        : 3;
+//                    $result[$key] = str_replace(substr($tmp, $offset), '', $tmp);
+//                }
+//
+//                $tmp = "";
+//            }
+//        }
+
         return $result;
     }
 }
