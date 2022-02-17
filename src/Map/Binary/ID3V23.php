@@ -32,6 +32,6 @@ final class ID3V23 extends ID3MapAbstract
         $length   = hexdec(bin2hex(substr($tag, ($position + 5), 3)));
         $data     = substr($tag, $position, 9 + $length);
 
-        return implode('', $this->generator($data));
+        return implode(array: (array)$this->generator($data));
     }
 }
